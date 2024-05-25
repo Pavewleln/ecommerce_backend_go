@@ -1,37 +1,46 @@
 package middlewares
 
 import (
-	"context"
-	"net/http"
-	"os"
+	"log"
+	"main/src/models"
+	"strings"
 
-	"github.com/dgrijalva/jwt-go"
 	"github.com/gin-gonic/gin"
 )
 
 func AuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		tokenString := c.GetHeader("Authorization")
-
-		if tokenString != "" {
-			claims := jwt.MapClaims{}
-			token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
-				return []byte(os.Getenv("JWT_ACCESS_SECRET")), nil
-			})
-
-			if err != nil || !token.Valid {
-				c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"message": "Access denied"})
-				return
-			}
-
-			userID := claims["_id"].(string)
-			ctx := context.WithValue(c.Request.Context(), "user_id", userID)
-			c.Request = c.Request.WithContext(ctx)
-		} else {
-			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"message": "Access denied"})
+		var token = c.GetHeader("Authorization")
+		if token == "" {
+			c.AbortWithStatusJSON(401, gin.H{"error": "Unauthorized to perform request. Please get a valid API key"})
 			return
 		}
 
+		// Extract Bearer token
+		const bearerPrefix = "Bearer "
+		splitToken := strings.Split(token, bearerPrefix)
+		var reqToken = splitToken[1]
+
+		if reqToken == "" {
+			c.AbortWithStatusJSON(401, gin.H{"error": "Invalid token format. Bearer token required"})
+			return
+		}
+
+		claims, err := models.DecodeToken(reqToken)
+		if err != nil {
+			log.Printf("Error decoding token: %v\n", err)
+			return
+		}
+
+		log.Printf("Claims: %v\n", claims)
+
+		c.Set("userId", 1)
+
 		c.Next()
 	}
+}
+
+// Register middleware on the base router
+func RegisterMiddlewares(router *gin.Engine) {
+	router.Use(AuthMiddleware())
 }
